@@ -112,7 +112,7 @@ def build_env(args):
         flatten_dict_observations = alg not in {'her'}
         env = make_vec_env(env_id, env_type, args.num_env or 1, seed, reward_scale=args.reward_scale, flatten_dict_observations=flatten_dict_observations)
 
-        if env_type == 'mujoco':
+        if env_type == 'mujoco' or env_type == 'dmc':
             env = VecNormalize(env, use_tf=True)
 
     return env
@@ -219,7 +219,7 @@ def main(args):
         save_path = osp.expanduser(args.save_path)
         model.save(save_path)
 
-    if args.play:
+    if args.play > 0:
         logger.log("Running trained model")
         obs = env.reset()
 
@@ -227,21 +227,49 @@ def main(args):
         dones = np.zeros((1,))
 
         episode_rew = np.zeros(env.num_envs) if isinstance(env, VecEnv) else np.zeros(1)
-        while True:
+
+        pixels = [[]]
+
+        import visdom
+        vis = visdom.Visdom(port=8095)
+        vis.close()
+
+        _img = env.render()
+        ih, iw = _img.shape[:2]
+
+        n = 0
+        
+        rootquat = env.envs[0].env.env.dmcenv.physics.named.data.qpos['root']
+        print(str(rootquat.tolist()))
+        
+        while True and n < args.play:
             if state is not None:
                 actions, _, state, _ = model.step(obs,S=state, M=dones)
             else:
                 actions, _, _, _ = model.step(obs)
 
+            # print(actions)
+            # import pdb; pdb.set_trace()
+
             obs, rew, done, _ = env.step(actions)
             episode_rew += rew
-            env.render()
+            pixels[-1].append(env.render().copy())
+            n+=1
+
             done_any = done.any() if isinstance(done, np.ndarray) else done
             if done_any:
+#                import pdb; pdb.set_trace()
+                rootquat = env.envs[0].env.env.dmcenv.physics.named.data.qpos['root']
+                vis.video(np.stack(pixels[-1][::5]), opts=dict(width=iw, height=ih, title=str(rootquat.tolist())))
+                pixels.append([])
+
                 for i in np.nonzero(done)[0]:
                     print('episode_rew={}'.format(episode_rew[i]))
                     episode_rew[i] = 0
 
+        import pdb; pdb.set_trace()
+        vis.video(np.stack(pixels[-1][::5]), opts=dict(width=iw, height=ih))
+        
     env.close()
 
     return model

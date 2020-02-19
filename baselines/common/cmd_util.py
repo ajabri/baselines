@@ -65,6 +65,8 @@ def make_env(env_id, env_type, mpi_rank=0, subrank=0, seed=None, reward_scale=1.
 
     wrapper_kwargs = wrapper_kwargs or {}
     env_kwargs = env_kwargs or {}
+
+
     if ':' in env_id:
         import re
         import importlib
@@ -77,8 +79,11 @@ def make_env(env_id, env_type, mpi_rank=0, subrank=0, seed=None, reward_scale=1.
         import retro
         gamestate = gamestate or retro.State.DEFAULT
         env = retro_wrappers.make_retro(game=env_id, max_episode_steps=10000, use_restricted_actions=retro.Actions.DISCRETE, state=gamestate)
-    else:
-        env = gym.make(env_id, **env_kwargs)
+    elif env_type == 'dmc':
+        from dm_control import suite
+        import baselines.common.dmc_wrapper as dmc2gym
+        dm_env = suite.quadruped.escape(time_limit=30)
+        env = dmc2gym.DmControlWrapper('', '', env=dm_env)
 
     if flatten_dict_observations and isinstance(env.observation_space, gym.spaces.Dict):
         env = FlattenObservation(env)
@@ -170,7 +175,7 @@ def common_arg_parser():
     parser.add_argument('--save_video_interval', help='Save video every x steps (0 = disabled)', default=0, type=int)
     parser.add_argument('--save_video_length', help='Length of recorded video. Default: 200', default=200, type=int)
     parser.add_argument('--log_path', help='Directory to save learning curve data.', default=None, type=str)
-    parser.add_argument('--play', default=False, action='store_true')
+    parser.add_argument('--play', default=-1, type=int, help='number of demo timesteps to play')
     return parser
 
 def robotics_arg_parser():
